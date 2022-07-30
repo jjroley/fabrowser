@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>basic font awesome browser</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.0-next-30eb267ab-20220708/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jjroley/font-awesome/css/all.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/styles/a11y-dark.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/highlight.min.js"></script>
+  <link rel='stylesheet' href='style.css' >
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <!-- setup -->
+  <script type="text/babel">
+    // expose react hooks to global scope
+    const {useState, useEffect, useCallback, useRef} = React;
+
+    const fontawesome = window.FA_ICONS
+  </script>
+
+  <!-- icon context -->
+  <script type="text/babel">
+    const IconContext = React.createContext();
+    const useIcons = function () {
+      return React.useContext(IconContext);
+    };
+    const IconProvider = function ({children}) {
+      const [icons, setIcons] = useState([]);
+      const [filteredIcons, setFilteredIcons] = useState([]);
+      const [filters, setFilters] = useState([])
+
+      const loadIcons = (fontawesome) => {
+        const icons = Object.keys(fontawesome).reduce((a, b) => {
+          return a.concat(fontawesome[b].map(icon => {
+            return { name: icon, prefix: b }
+          }))
+        }, [])
+        .reduce((a, b) => {
+          if(a.find(i => i.name === b.name)) return a
+          return a.concat(b)
+        }, [])
+        .sort((a, b) => b.name > a.name ? -1 : 1)
+        setIcons(icons)
+      }
+
+      useEffect(() => {
+        fetch('https://cdn.jsdelivr.net/gh/jjroley/font-awesome/data/icon-names.json')
+        .then(res => res.json())
+        .then(loadIcons)
+      }, []);
+
+      useEffect(runFilter, [filters, icons])
+
+      function filterIcons(icons, filter) {
+        return icons.filter(i => filter.cb(i))
+      }
+
+      function runFilter() {
+        let _icons = icons
+        filters.forEach(filter => {
+          _icons = filterIcons(_icons, filter)
+        })
+        setFilteredIcons(_icons)
+      }
+
+      function addFilter(filter) {
+        if (filters.find(f => f.name === filter.name)) return
+        setFilters([...filters, filter])
+      }
+
+      function updateFilter(filter) {
+        let newFilters = [...filters]
+        if (!filters.find(f => f.name === filter.name)) {
+          newFilters.push(filter)
+        }
+        setFilters(newFilters.map(f => {
+          if (f.name === filter.name) {
+            return {...filter}
+          }
+          return f
+        }))
+      }
+
+      function removeFilter(name) {
+        setFilters(filters.filter(f => f.name !== name))
+      }
+
+      const value = {
+        filteredIcons,
+        icons,
+        addFilter,
+        removeFilter,
+        updateFilter
+      };
+
+      return (
+        <IconContext.Provider value={value}>{children}</IconContext.Provider>
+      );
+    };
+  </script>
+
+  <!-- helper functions -->
+  <script type="text/babel">
+    function getStylesheet(src) {
+      const {styleSheets} = document;
+      for (var i = 0; i < styleSheets.length; i++) {
+        if (!styleSheets[i].href) continue;
+        if (styleSheets[i].href.includes(src)) {
+          return styleSheets[i];
+        }
+      }
+      return null;
+    }
+    function getStyleSelectors(stylesheets, cb) {
+      if(!Array.isArray(stylesheets)) {
+        stylesheets = [stylesheets]
+      }
+      try {
+        let names = [];
+        for(const stylesheet of stylesheets) {
+          for (const rule of stylesheet.cssRules) {
+            if (!rule.selectorText) continue;
+            names = names.concat(rule.selectorText.split(', '))
+          }
+        }
+        return names.filter(name => cb(name));
+      } catch (e) {
+        console.error("Cannot access stylesheet rules", e)
+        return []
+      }
+    }
+    function loadFontAwesomeStyles(...types) {
+      const fa = ___FONT_AWESOME___
+      if(!fa) return
+      const styles = fa.styles
+      const selected = {}
+      for(const style in styles) {
+        if(types.length && !types.includes(style)) continue;
+        selected[style] = Object.keys(styles[style])
+      }
+      return selected;
+    }
+  </script>
+
+  <!-- components -->
+  <script type="text/babel">
+    function Icon({icon, viewIcon}) {
+      return (
+        <div className="icon" onClick={() => viewIcon(icon)}>
+          <i className={`${icon.prefix} fa-${icon.name}`}></i>
+          <span>{icon.name}</span>
+        </div>
+      );
+    }
+    function Icons({viewIcon}) {
+      const {filteredIcons: icons} = useIcons();
+
+      const [page, setPage] = useState(0)
+      const [viewingIcons, setViewingIcons] = useState([])
+
+      const iconsToView = 50
+
+      const numPages = Math.ceil(icons.length / iconsToView)
+
+      const updateDisplay = (page) => {
+        const index = page * iconsToView
+        setViewingIcons(icons.slice(index, index + iconsToView))
+      }
+
+      const newPage = (p) => {
+        if(p < 0 || p >= numPages) return
+        setPage(p)
+      }
+
+      // update icons being viewed every time page changes
+      useEffect(() => updateDisplay(page), [page])
+
+      useEffect(() => { 
+        setPage(0) 
+        updateDisplay(0)
+      }, [icons])
+      
+      
+      return (
+        <div className='icons-container'>
+          <div className="icons-header">
+            <div className="amt-icons">{icons.length} icon{icons.length !== 1 && 's'}</div>
+            <div className="icons-current-page">
+              <i className='fas fa-chevron-left' onClick={() => newPage(page - 1)}></i>
+              <span style={{margin: '0 5px'}}>Page {page + 1} of {numPages}</span>
+              <i className='fas fa-chevron-right' onClick={() => newPage(page + 1)}></i>
+            </div>
+          </div>
+          <div className="icon-grid">
+            {viewingIcons.map((icon) => {
+              return <Icon key={icon.name} icon={icon} viewIcon={viewIcon} />;
+            })}
+          </div>
+        </div>
+      );
+    }
+    function IconDetails({icon, closeView, ...rest}) {
+      const modalRef = useRef()
+      useEffect(() => {
+        console.log(modalRef.current)
+        if(icon) {
+          modalRef.current.showModal()
+        }else {
+          modalRef.current.closeModal()
+        }
+      }, [icon])
+
+      const coloredCode = hljs.highlight(`<i class="${icon.prefix} fa-${icon.name}"></i>`, { language: 'html' }).value
+      return (
+        <dialog ref={modalRef} className='icon-details' {...rest}>
+          <div className='dialog-header'>
+            <h1>{icon.name}</h1>
+            <div onClick={closeView} className='close-modal'>
+              <i className='fa fa-times'></i>
+            </div>
+          </div>
+          <div className='icon-large-display'>
+            <i className={`${icon.prefix} fa-${icon.name}`}></i>
+          </div>
+          <div className='icon-code'>
+            <pre>
+              <code dangerouslySetInnerHTML={{ __html: coloredCode }}></code>  
+            </pre>  
+          </div>
+        </dialog>
+      )
+    }
+
+
+    function SearchBox({onSearch}) {
+      const [value, setValue] = useState("");
+      const {updateFilter} = useIcons();
+
+      function onChange(e) {
+        setValue(e.target.value);
+        updateFilter({name: 'keyword', cb: i => i.name.replaceAll('-', ' ').includes(e.target.value) });
+      }
+      return (
+        <div className="search-bar">
+          <i className="fa fa-search"></i>
+          <input
+            value={value}
+            placeholder="search for icons"
+            onChange={onChange}
+          />
+        </div>
+      );
+    }
+    function Filter(props) {
+      const {addFilter, removeFilter} = useIcons()
+      const [checked, setChecked] = useState(props.checked || false)
+
+      function onChange(e) {
+        if (!checked) {
+          addFilter({name: props.name, cb: props.test})
+        } else {
+          removeFilter(props.name)
+        }
+        setChecked(!checked)
+      }
+
+      return (
+        <div className={`filter ${checked ? 'checked' : ''}`} onClick={onChange}>
+          <i className={`fa-solid ${checked ? 'fa-check' : 'fa-square-border'}`}></i>
+          {props.name}
+        </div>
+      )
+    }
+    function Filters() {
+      return (
+        <div className='filters'>
+          <div className='filters-header'>
+            <i className='fas fa-sliders'></i> Filters
+          </div>
+          <Filter name='Brands' test={i => i.prefix === 'fab'} />
+          <Filter name='Regular' test={i => i.prefix === 'fas'} />
+          <div className='filters-header'>
+            <i className='fas fa-shapes'></i> Shapes
+          </div>
+          <Filter name='Circle' test={i => /^circle/.test(i.name) } />
+          <Filter name='Square' test={i => /^square/.test(i.name) } />  
+        </div>
+      )
+    }
+    function Sidebar() {
+      return (
+        <div className='sidebar'>
+          <SearchBox />
+          <Filters />
+        </div>
+      )
+    }
+    
+    
+    function IconPage() {
+      const icons = useIcons();
+      const [filtered, setFiltered] = useState([]);
+      const [viewingIcon, setViewingIcon] = useState(null)
+
+      useEffect(() => {
+        setFiltered(icons);
+      }, [icons]);
+
+      function onSearch(e) {
+        const val = e.target.value.toLowerCase();
+        setFiltered(
+          icons.filter((i) => {
+            return i.includes(val);
+          })
+        );
+      }
+
+      function viewIcon(icon) {
+        setViewingIcon(icon)
+      }
+
+      function closeView() {
+        setViewingIcon(null)
+      }
+
+      return (
+        <div className='icon-page'>
+          <div className='sidebar'>
+            <Sidebar />
+          </div>
+          <div className='icons'>
+            <Icons viewIcon={viewIcon} />
+          </div>
+          {viewingIcon && <IconDetails icon={viewingIcon} closeView={closeView} />}
+        </div>
+      );
+    }
+  </script>
+
+  <!-- main component -->
+  <script type="text/babel">
+    function App() {
+      return (
+        <IconProvider>
+          <IconPage />
+        </IconProvider>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+
+</html>
